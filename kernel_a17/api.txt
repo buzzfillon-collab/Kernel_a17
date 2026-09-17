@@ -1,0 +1,1 @@
+{"exchange":"binance","testnet":false,"name":"Bnans","apiKey":"D0FzafyDStrxZY97pL2mc8R0H8ommJXeON0t5xFSiNDNoTuJWRFtvAlS9PAb7AuL","apiSecret":"maLqX2HpIRwVAGHoUiO3kGWScnNrVX8MRqWm9XmPk66MChkCiZ6Ww1AkVfWXMnkQ","color":"#ff3ef","active":true,"tealstreetProxy":false,"tealstreetTunnel":true,"user":"google-oauth2|111712792306992632569"}
