@@ -1,0 +1,148 @@
+name: Build Android 17 x86-64 kernel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-kernel.yml'
+      - 'patches/**'
+      - 'kernel_a17/kernel-build-output/.config-android17-6.18'
+      - 'docs/KERNEL_BUILD.md'
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Official Android Common Kernel ref to build
+        required: true
+        default: ASB-2026-10-05_17-6.18
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compile ACK x86-64 with BDPROCHOT workaround
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'ASB-2026-10-05_17-6.18' }}
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/powershell
+          df -h
+
+      - name: Install kernel build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential cpio flex git libelf-dev libncurses-dev \
+            libssl-dev pahole perl python3 rsync
+
+      - name: Fetch pinned Android Common Kernel source
+        run: |
+          git clone --depth 1 --branch "$KERNEL_REF" \
+            https://android.googlesource.com/kernel/common kernel-source
+          echo "KERNEL_COMMIT=$(git -C kernel-source rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "Resolved source: $KERNEL_REF @ $(git -C kernel-source rev-parse HEAD)"
+          grep -E '^VERSION =|^PATCHLEVEL =|^SUBLEVEL =|^EXTRAVERSION =' kernel-source/Makefile
+
+      - name: Apply and verify BDPROCHOT patch
+        run: |
+          git -C kernel-source apply --check "$GITHUB_WORKSPACE/patches/bdprochot-android17-6.18.patch"
+          git -C kernel-source apply "$GITHUB_WORKSPACE/patches/bdprochot-android17-6.18.patch"
+          grep -q 'MSR_IA32_POWER_CTL_BIDIR_PROCHOT' kernel-source/arch/x86/include/asm/msr-index.h
+          grep -q 'CONFIG_DISABLE_BDPROCHOT' kernel-source/arch/x86/kernel/cpu/intel.c
+          grep -q 'config DISABLE_BDPROCHOT' kernel-source/arch/x86/Kconfig.cpu
+          git -C kernel-source diff --check
+
+      - name: Configure Android and laptop support
+        working-directory: kernel-source
+        run: |
+          cp "$GITHUB_WORKSPACE/kernel_a17/kernel-build-output/.config-android17-6.18" .config
+          scripts/config --file .config \
+            --enable DISABLE_BDPROCHOT \
+            --enable ANDROID_BINDER_IPC \
+            --enable ANDROID_BINDERFS \
+            --enable OVERLAY_FS \
+            --enable DRM_I915 \
+            --enable SATA_AHCI \
+            --enable EFI_STUB \
+            --enable EXT4_FS \
+            --enable VFAT_FS \
+            --enable TMPFS \
+            --enable USB_XHCI_HCD \
+            --enable USB_XHCI_PCI \
+            --enable ACPI_BATTERY \
+            --enable ACPI_FAN \
+            --enable SND_HDA_INTEL \
+            --set-str LOCALVERSION "-a17pc-bdprochot"
+          make ARCH=x86_64 olddefconfig
+          for symbol in \
+            DISABLE_BDPROCHOT ANDROID_BINDER_IPC ANDROID_BINDERFS OVERLAY_FS \
+            DRM_I915 SATA_AHCI EFI_STUB EXT4_FS VFAT_FS TMPFS; do
+            grep -qx "CONFIG_${symbol}=y" .config || {
+              echo "::error::Required config CONFIG_${symbol} did not resolve to y"
+              exit 1
+            }
+          done
+          grep -E '^CONFIG_(LOCALVERSION|DISABLE_BDPROCHOT|ANDROID_BINDER_IPC|ANDROID_BINDERFS|OVERLAY_FS|DRM_I915|SATA_AHCI|EFI_STUB)=' .config
+
+      - name: Build kernel image and modules
+        working-directory: kernel-source
+        run: |
+          set -o pipefail
+          make -j2 ARCH=x86_64 bzImage modules 2>&1 | tee "$GITHUB_WORKSPACE/kernel-build.log"
+          make ARCH=x86_64 modules_install INSTALL_MOD_PATH="$PWD/stage"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp arch/x86/boot/bzImage "$GITHUB_WORKSPACE/dist/kernel-bzImage"
+          cp System.map "$GITHUB_WORKSPACE/dist/System.map"
+          cp .config "$GITHUB_WORKSPACE/dist/kernel.config"
+          KERNEL_RELEASE="$(make -s ARCH=x86_64 kernelrelease)"
+          tar -czf "$GITHUB_WORKSPACE/dist/modules.tar.gz" -C stage lib/modules
+          {
+            echo "Source repository: https://android.googlesource.com/kernel/common"
+            echo "Source ref: $KERNEL_REF"
+            echo "Source commit: $KERNEL_COMMIT"
+            echo "Kernel release: $KERNEL_RELEASE"
+            echo "Architecture: x86_64"
+            echo "BDPROCHOT workaround: CONFIG_DISABLE_BDPROCHOT=y"
+            echo "BDPROCHOT control: IA32_POWER_CTL (0x1fc), bit 0"
+            echo "Android Binder IPC: enabled"
+            echo "BinderFS: enabled"
+            echo "OverlayFS: enabled"
+            echo "This is a kernel + modules build, not a complete Android boot image."
+          } > "$GITHUB_WORKSPACE/dist/BUILD_INFO.txt"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum dist/kernel-bzImage dist/System.map dist/kernel.config dist/modules.tar.gz dist/BUILD_INFO.txt > dist/SHA256SUMS
+          file dist/kernel-bzImage
+          du -h dist/*
+
+      - name: Verify build outputs
+        run: |
+          test -s dist/kernel-bzImage
+          test -s dist/System.map
+          test -s dist/kernel.config
+          test -s dist/modules.tar.gz
+          grep -qx 'CONFIG_DISABLE_BDPROCHOT=y' dist/kernel.config
+          grep -qx 'CONFIG_ANDROID_BINDER_IPC=y' dist/kernel.config
+          grep -qx 'CONFIG_ANDROID_BINDERFS=y' dist/kernel.config
+          grep -qx 'CONFIG_DRM_I915=y' dist/kernel.config
+          grep -qx 'CONFIG_SATA_AHCI=y' dist/kernel.config
+          tar -tzf dist/modules.tar.gz | grep -q '^lib/modules/'
+          cat dist/BUILD_INFO.txt
+          cat dist/SHA256SUMS
+
+      - name: Upload kernel build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: a17pc-ack-x86_64-${{ github.sha }}
+          path: |
+            dist/
+            kernel-build.log
+          if-no-files-found: error
+          retention-days: 30
