@@ -33,7 +33,8 @@ jobs:
       - name: Free runner disk space
         run: |
           df -h
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/powershell
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/powershell
+          sudo apt-get clean
           df -h
 
       - name: Install kernel build dependencies
