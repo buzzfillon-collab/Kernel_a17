@@ -37,10 +37,10 @@ diff --git a/arch/x86/kernel/cpu/intel.c b/arch/x86/kernel/cpu/intel.c
 +#ifdef CONFIG_DISABLE_BDPROCHOT
 +	u64 power_ctl;
 +
-+	if (!rdmsrl_safe(MSR_IA32_POWER_CTL, &power_ctl) &&
++	if (!rdmsrq_safe(MSR_IA32_POWER_CTL, &power_ctl) &&
 +	    (power_ctl & MSR_IA32_POWER_CTL_BIDIR_PROCHOT)) {
 +		power_ctl &= ~MSR_IA32_POWER_CTL_BIDIR_PROCHOT;
-+		if (!wrmsrl_safe(MSR_IA32_POWER_CTL, power_ctl))
++		if (!wrmsrq_safe(MSR_IA32_POWER_CTL, power_ctl))
 +			pr_info_once("x86/intel: external PROCHOT# requests disabled by CONFIG_DISABLE_BDPROCHOT\n");
 +	}
 +#endif
