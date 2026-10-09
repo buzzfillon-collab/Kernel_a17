@@ -30,12 +30,8 @@ jobs:
       - name: Check out this repository
         uses: actions/checkout@v4
 
-      - name: Free runner disk space
-        run: |
-          df -h
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/powershell
-          sudo apt-get clean
-          df -h
+      - name: Inspect runner disk space
+        run: df -h
 
       - name: Install kernel build dependencies
         run: |
