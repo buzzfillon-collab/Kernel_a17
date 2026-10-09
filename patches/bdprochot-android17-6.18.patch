@@ -21,7 +21,7 @@ or latched external PROCHOT conditions.
 diff --git a/arch/x86/include/asm/msr-index.h b/arch/x86/include/asm/msr-index.h
 --- a/arch/x86/include/asm/msr-index.h
 +++ b/arch/x86/include/asm/msr-index.h
-@@ -265,2 +265,5 @@
+@@ -265,4 +265,7 @@
  #define MSR_IA32_POWER_CTL		0x000001fc
  #define MSR_IA32_POWER_CTL_BIT_EE	19
 +#define MSR_IA32_POWER_CTL_BIDIR_PROCHOT_BIT	0
