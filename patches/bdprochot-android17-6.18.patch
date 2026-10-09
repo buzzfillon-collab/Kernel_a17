@@ -1,0 +1,70 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: a17PC <a17pc@users.noreply.github.com>
+Subject: [PATCH] x86/intel: add opt-in external PROCHOT bypass for charger quirks
+
+Use IA32_POWER_CTL (MSR 0x1fc), bit 0, which controls bidirectional
+PROCHOT#. Do not confuse this with IA32_MISC_ENABLE bit 38, which is
+Turbo Mode Disable.
+
+The option is disabled by default. When enabled, clear the bit during
+early initialization on each Intel logical CPU. This leaves the CPU's
+internal thermal control in place, but stops external platform devices
+from requesting PROCHOT# throttling; enable only for diagnosed false
+or latched external PROCHOT conditions.
+
+---
+ arch/x86/Kconfig.cpu              | 11 +++++++++++
+ arch/x86/include/asm/msr-index.h  |  3 +++
+ arch/x86/kernel/cpu/intel.c       | 13 +++++++++++++
+ 3 files changed, 27 insertions(+)
+
+diff --git a/arch/x86/include/asm/msr-index.h b/arch/x86/include/asm/msr-index.h
+--- a/arch/x86/include/asm/msr-index.h
++++ b/arch/x86/include/asm/msr-index.h
+@@ -265,2 +265,5 @@
+ #define MSR_IA32_POWER_CTL		0x000001fc
+ #define MSR_IA32_POWER_CTL_BIT_EE	19
++#define MSR_IA32_POWER_CTL_BIDIR_PROCHOT_BIT	0
++#define MSR_IA32_POWER_CTL_BIDIR_PROCHOT	(1ULL << MSR_IA32_POWER_CTL_BIDIR_PROCHOT_BIT)
+ 
+ /* Abbreviated from Intel SDM name IA32_INTEGRITY_CAPABILITIES */
+diff --git a/arch/x86/kernel/cpu/intel.c b/arch/x86/kernel/cpu/intel.c
+--- a/arch/x86/kernel/cpu/intel.c
++++ b/arch/x86/kernel/cpu/intel.c
+@@ -202,6 +202,19 @@ static void early_init_intel(struct cpuinfo_x86 *c)
+ {
+ 	u64 misc_enable;
++#ifdef CONFIG_DISABLE_BDPROCHOT
++	u64 power_ctl;
++
++	if (!rdmsrl_safe(MSR_IA32_POWER_CTL, &power_ctl) &&
++	    (power_ctl & MSR_IA32_POWER_CTL_BIDIR_PROCHOT)) {
++		power_ctl &= ~MSR_IA32_POWER_CTL_BIDIR_PROCHOT;
++		if (!wrmsrl_safe(MSR_IA32_POWER_CTL, power_ctl))
++			pr_info_once("x86/intel: external PROCHOT# requests disabled by CONFIG_DISABLE_BDPROCHOT\n");
++	}
++#endif
+ 
+ 	if (c->x86 >= 6 && !cpu_has(c, X86_FEATURE_IA64))
+ 		c->microcode = intel_get_microcode_revision();
+diff --git a/arch/x86/Kconfig.cpu b/arch/x86/Kconfig.cpu
+--- a/arch/x86/Kconfig.cpu
++++ b/arch/x86/Kconfig.cpu
+@@ -482,3 +482,14 @@ config CPU_SUP_VORTEX_32
+ 	  makes the kernel a tiny bit smaller.
+ 
+ 	  If unsure, say N.
++
++config DISABLE_BDPROCHOT
++	bool "Ignore external PROCHOT# requests (charger/battery compatibility)"
++	depends on X86_64 && CPU_SUP_INTEL
++	default n
++	help
++	  Clear IA32_POWER_CTL bit 0 during Intel CPU initialization. This can
++	  work around false or latched external PROCHOT# requests that cause
++	  severe throttling with some charger or battery combinations.
++	  Internal CPU thermal control remains active, but external components
++	  can no longer request PROCHOT# throttling. Enable only after diagnosis.
++	  If unsure, say N.
+-- 
+2.46.0
