@@ -31,7 +31,7 @@ diff --git a/arch/x86/include/asm/msr-index.h b/arch/x86/include/asm/msr-index.h
 diff --git a/arch/x86/kernel/cpu/intel.c b/arch/x86/kernel/cpu/intel.c
 --- a/arch/x86/kernel/cpu/intel.c
 +++ b/arch/x86/kernel/cpu/intel.c
-@@ -202,6 +202,16 @@ static void early_init_intel(struct cpuinfo_x86 *c)
+@@ -202,5 +202,15 @@ static void early_init_intel(struct cpuinfo_x86 *c)
  {
  	u64 misc_enable;
 +#ifdef CONFIG_DISABLE_BDPROCHOT
